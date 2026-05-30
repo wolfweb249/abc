@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイムテキスト共有</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const textDisplay = document.getElementById('text-display');
+        const adminInput = document.getElementById('admin-input');
+        const loginBtn = document.getElementById('login-btn');
+        const adminPanel = document.getElementById('admin-panel');
+        const modal = document.getElementById('password-modal');
+
+        let isAdmin = false;
+        let user = null;
+
+        // 初期認証
+        const initAuth = async () => {
+            onAuthStateChanged(auth, (currentUser) => {
+                user = currentUser;
+                if (user) setupListener();
+            });
+            await signInAnonymously(auth);
+        };
+        initAuth();
+
+        let docRef;
+        const setupListener = () => {
+            if (!user) return;
+            // RULE 1準拠のパス: artifacts/{appId}/users/{userId}/data/{docId}
+            docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'sharedText');
+            onSnapshot(docRef, (doc) => {
+                if (doc.exists()) {
+                    textDisplay.innerText = doc.data().content || "";
+                }
+            }, (err) => console.error("Firestore Error: ", err));
+        };
+
+        // 音声共有ロジック
+        window.startAudioShare = async () => {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                alert("このブラウザまたは環境では画面・音声共有がサポートされていません。");
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    audio: true,
+                    video: false
+                });
+                console.log("音声共有準備完了");
+            } catch (err) {
+                console.error("共有エラー:", err);
+            }
+        };
+
+        window.openModal = () => modal.classList.remove('hidden');
+        window.closeModal = () => modal.classList.add('hidden');
+        window.checkPassword = () => {
+            if (document.getElementById('password-field').value === 'wolf249') {
+                isAdmin = true;
+                adminPanel.classList.remove('hidden');
+                loginBtn.classList.add('hidden');
+                closeModal();
+            } else {
+                alert('パスワードが違います');
+            }
+        };
+
+        window.updateText = async () => {
+            if (!isAdmin || !docRef) return;
+            await setDoc(docRef, { content: adminInput.value });
+        };
+    </script>
+</head>
+<body class="bg-white min-h-screen flex flex-col items-center justify-center relative">
+
+    <div class="absolute top-5 right-5 flex gap-2">
+        <button onclick="startAudioShare()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">音声共有</button>
+        <button id="login-btn" onclick="openModal()" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">管理者</button>
+    </div>
+
+    <div id="text-display" class="text-4xl font-bold text-gray-800 text-center px-4">読み込み中...</div>
+
+    <div id="admin-panel" class="hidden mt-10 p-5 border border-gray-300 rounded shadow-sm">
+        <textarea id="admin-input" oninput="updateText()" placeholder="テキストを入力..." class="w-64 h-32 p-2 border"></textarea>
+    </div>
+
+    <div id="password-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-white p-6 rounded shadow-lg">
+            <h2 class="text-lg mb-4">パスワード</h2>
+            <input type="password" id="password-field" class="border p-2 w-full mb-4">
+            <button onclick="checkPassword()" class="w-full py-2 bg-blue-500 text-white rounded">ログイン</button>
+        </div>
+    </div>
+</body>
+</html>
